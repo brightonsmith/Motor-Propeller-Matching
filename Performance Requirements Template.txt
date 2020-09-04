@@ -1,0 +1,2 @@
+Target speed (m/s)
+Thrust required per propeller (N)

@@ -1,0 +1,4 @@
+Name
+kV (RPM/volt)
+No load current (amps)
+Wind resistance (ohms)
