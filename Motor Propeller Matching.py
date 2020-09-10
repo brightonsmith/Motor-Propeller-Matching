@@ -1,9 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-
-version = 'beta 2.0.0'
-
 '''
 This is for level flight calculations, not for static thrust.
 '''
@@ -149,7 +146,6 @@ def Q_m(i, i0, kV):
 
 
 # Propeller Functions
-
 def J(V, n, D):
     return V / (n * D)
 
@@ -204,9 +200,9 @@ def omega(V, J, D, handle_array=False):
     return V / (J * D)
 
 
-print('\nWelcome to the motor-propeller matcher version {}!\n'
+print('\nWelcome to the motor-propeller matcher!\n'
       'I hope that you find this tool useful for matching a motor and propeller.\n'
-      'Make sure you\'ve read the readme!\n'.format(version))
+      'Make sure you\'ve read the readme!\n')
 
 print('First, enter the motor data.')
 motor = {
@@ -272,7 +268,7 @@ for propeller in propellers:
     # print("Required RPM: {}".format(required_RPM))
     n = np.linspace(min_n, max_n)
 
-    fig = plt.figure("Motor Propeller Matcher version {}".format(version), figsize=(13.03408/2, 8.5))
+    fig = plt.figure("Motor Propeller Matcher", figsize=(13.03408/2, 8.5))
 
     # Plot the thrust of the propeller at target speed as a function of n ooh also plot thrust line
     p1 = fig.add_subplot(4, 1, 2)
