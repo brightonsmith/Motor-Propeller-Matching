@@ -13,7 +13,7 @@ Stuff I wanna put in:
   * and figure out how to easily pull the proper Ct and Cp given the advance ratio  [DONE]
   * After essential functions finished, find out how to pull photos  [DONE]
 - Automate the process by manipulating the equations  [DONE]
-- Make a plot of combined efficiency
+- Make a plot of combined efficiency [myeh, maybe]
 '''
 
 '''
@@ -100,6 +100,23 @@ def read_propeller_data(filename):
 
 
 # Motor functions
+
+def read_motor_data(filename):
+    motor = {
+        'name': "",
+        'kV': 0,       # remember to convert to rps / volt
+        'i0': 0,       # Amps
+        'R': 0         # Ohms
+    }
+    with open(filename, 'r') as file:
+        extensionless_filename = filename[:filename.rindex('.')]
+        motor['name'] = extensionless_filename
+        motor['kV'] = float(file.readline()) / 60    # Converted from rpm/volt to rps/volt
+        motor['i0'] = float(file.readline())         # Amps
+        motor['R'] = float(file.readline())          # Ohms
+
+    return motor
+
 
 def eta_m(i0, V, R, i):
     """
@@ -204,13 +221,6 @@ print('\nWelcome to the motor-propeller matcher!\n'
       'I hope that you find this tool useful for matching a motor and propeller.\n'
       'Make sure you\'ve read the readme!\n')
 
-print('First, enter the motor data.')
-motor = {
-    'name': input("Enter the motor name: "),
-    'kV': float(input("Enter the kV rating in RPM per volt: ")) / 60,  # convert to rps / volt
-    'i0': float(input("Enter the no load current in amps: ")),  # A
-    'R': float(input("Enter the wind resistance in ohms: ")),  # Ohms
-}
 
 print("Next, enter the performance targets.")
 target_speed = float(input("Enter your target speed in m/s: ")) # m/s
@@ -244,6 +254,9 @@ while proceed != 'y':
     proceed = input("\nContinue? (y/n): ").lower()
 
 propellers = []
+
+# first, do motor = ... and test. Then, do motors = []
+# Exciting!
 
 for file in os.listdir(os.getcwd()):
     if file[-4:] == ".txt" or file[-4:] == ".dat":  # because these read the same, right?
