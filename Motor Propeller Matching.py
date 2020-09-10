@@ -255,8 +255,7 @@ while proceed != 'y':
 
 propellers = []
 
-# first, do motor = ... and test. Then, do motors = []
-# Exciting!
+# now do motors!
 
 for file in os.listdir(os.getcwd()):
     if file[-4:] == ".txt" or file[-4:] == ".dat":  # because these read the same, right?
