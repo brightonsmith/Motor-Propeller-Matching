@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import logging
+
 '''
 This is for level flight calculations, not for static thrust.
 '''
@@ -53,7 +55,7 @@ Next maybe look at acceleration and decelaration conditions
 # Logging Setup #
 logger = logging.getLogger("Motor Propeller Matcher")
 logger.setLevel(logging.WARNING)
-ch = logging.StreamHandle()
+ch = logging.StreamHandler()
 ch.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)-8s %(message)s'))
 logger.addHandler(ch)
 fh = logging.FileHandler("Log.log")
@@ -277,43 +279,37 @@ print('\nWelcome to the motor-propeller matcher!\n'
       'Make sure you\'ve read the readme!\n')
 
 
-print("Next, enter the performance targets.")
+print("Enter the performance targets.")
 target_speed = float(input("Enter your target speed in m/s: "))  # m/s
 T_req = float(input("Enter how many newtons of thrust per propeller you need "
                     "to achieve level flight at target speed: "))  # N
 
-print("\nThese are the items in your current directory:")
-for item in os.listdir(os.getcwd()):
-    print(item)
-os.chdir("{}//{}".format(os.getcwd(), input("\nEnter the directory containing your prepared propeller files: ")))
 
-print("Files in chosen directory:")
-for item in os.listdir(os.getcwd()):
-    print(item)
-
-proceed = input("\nContinue? (y/n): ").lower()
-
-while proceed != 'y':
-    print("Try again:")
-    os.chdir("{}//..".format(os.getcwd()))
-
-    print("These are the items in your current directory:")
-    for item in os.listdir(os.getcwd()):
-        print(item)
-    os.chdir("{}//{}".format(os.getcwd(), input("Enter the directory containing your prepared propeller files: ")))
-
-    print("Files in chosen directory:")
-    for item in os.listdir(os.getcwd()):
-        print(item)
-
-    proceed = input("\nContinue? (y/n): ").lower()
-
+propeller_directory = input("\nEnter the name of the directory containing your prepared propeller files.\n"
+                            "This directory must be in the same directory as the script.\n"
+                            " > ")
+os.chdir("{}//{}".format(os.getcwd(), propeller_directory))
 propellers = []
 for file in os.listdir(os.getcwd()):
-    if file[-4:] == ".txt" or file[-4:] == ".dat":  # because these read the same, right?
+    if file[-4:] == ".txt" or file[-4:] == ".dat":
         propellers.append(read_propeller_data(file))
+os.chdir("{}//..".format(os.getcwd()))
 
 
+motor_directory = input("\nEnter the name of the directory containing your prepared motor files.\n"
+                            "This directory must be in the same directory as the script.\n"
+                            " > ")
+os.chdir("{}//{}".format(os.getcwd(), motor_directory))
+motors = []
+for file in os.listdir(os.getcwd()):
+    if file[-4:] == ".txt" or file[-4:] == ".dat":
+        motors.append(read_motor_data(file))
+
+for motor in motors:
+    for propeller in propellers:
+        print("Look ma! I'm matching the {} motor with the {} propeller!".format(motor['name'], propeller['name']))
+
+'''
 for propeller in propellers:
     def T(n, rho=1.225, handle_array=False):  # This isn't good but I don't know how else to do it | Well maybe it's not so bad
         """
@@ -436,3 +432,4 @@ for propeller in propellers:
     fig.delaxes(p2)
     fig.delaxes(p3)
     fig.delaxes(p4)
+'''
