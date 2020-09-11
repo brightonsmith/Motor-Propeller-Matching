@@ -14,6 +14,8 @@ Stuff I wanna put in:
   * After essential functions finished, find out how to pull photos  [DONE]
 - Automate the process by manipulating the equations  [DONE]
 - Make a plot of combined efficiency [myeh, maybe]
+
+- Since motors and ESCs suffer losses under throttle, I should include this in the efficiency calculation
 '''
 
 '''
@@ -44,12 +46,42 @@ Better process of making a good propeller file:  (Hold off on this for now)
 5. Copy data from hi J vals starting with the one that is the next largest after the highest low j val
 6. done!
 
-Next maybe look at acceleration and decelaration
-
+Next maybe look at acceleration and decelaration conditions
 '''
 
 
+# Logging Setup #
+logger = logging.getLogger("Motor Propeller Matcher")
+logger.setLevel(logging.WARNING)
+ch = logging.StreamHandle()
+ch.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)-8s %(message)s'))
+logger.addHandler(ch)
+fh = logging.FileHandler("Log.log")
+fh.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)-8s %(message)s'))
+logger.addHandler(fh)
+# End Logging Setup #
+
+
 def modified_regula_falsi(f, bounds, target, tol):
+    """
+    solve for an x value at a given y value
+
+    INPUTS
+    ------
+    f : function
+        function to be evaluated
+    bounds: list or tuple
+            list or tuple with two elements that bound the regula-falsi method
+    target: float
+            the f(x) value at which you are trying to find the x value of
+    tol:    float
+            the tolerance between the estimated f(x) value and the actual f(x) value
+
+    OUTPUTS
+    -------
+    x : float
+        the x value at which the estimated f(x) value is close enough to the target as specified by the tol
+    """
     iterations = 0
     a = bounds[0]
     b = bounds[1]
@@ -57,7 +89,8 @@ def modified_regula_falsi(f, bounds, target, tol):
     while abs(f(x) - target) > tol:
         iterations += 1
         if iterations > 100:
-            raise Exception("Regula-Falsi method did not converge after 100 iterations.")
+            logger.error("Regula-Falsi method did not converge after 100 iterations.")
+            raise RuntimeError("Regula-Falsi method did not converge after 100 iterations.")
         if np.sign(f(x) - target) == np.sign(f(a) - target):
             a = x
         else:
@@ -164,10 +197,32 @@ def Q_m(i, i0, kV):
 
 # Propeller Functions
 def J(V, n, D):
+    """
+    find J as a function of (V)elocity, propeller rotatio(n)s per second, and propeller (D)iameter
+
+    :param V: airspeed in m/s
+    :param n: propeller rps
+    :param D: propeller diameter in m
+    :return:
+    """
     return V / (n * D)
 
 
 def pull_from_data(J, J_data, prop_data, handle_array=False):
+    """
+    Interpolate propeller data given an advance ratio, and the corresponding lists of J values and propeller data
+    values. The list of J_data serves as x values and the list of prop_data serves as f(x) values. The way this function
+    goes beyond simple interpolation given two points is by only needing the J at which the user needs data at. It then
+    automatically finds the points that need to be used in the interpolation, and handles machine precision errors at
+    the edge cases. It will not throw an exception if the J value is outside the domain of the propeller data, only
+    print a debug statement indicating so and returning a value of zero for that specific point.
+
+    :param J: The advance ratio at which you are interpolating from the propeller lists
+    :param J_data: The propeller list of advance ratios that correspond to the Ct, Cp, or eta values
+    :param prop_data: The Ct, Cp, or eta values that correspond to the advance ratios
+    :param handle_array:
+    :return:
+    """
     if handle_array:
         result = []
         for i in J:
@@ -180,14 +235,14 @@ def pull_from_data(J, J_data, prop_data, handle_array=False):
         return prop_data[-1]
 
     if J < J_data[0]:
-        print("J:          {}\n"
+        print("J:         {}\n"
               "J_data[0]: {}".format(J, J_data[0]))
-        print("The advance ratio was below the range of advance ratios tested on the propeller.")
+        logger.warning("The advance ratio was below the range of advance ratios tested on the propeller.")
         return 0
     elif J > J_data[-1]:
         print("J:          {}\n"
               "J_data[-1]: {}".format(J, J_data[-1]))
-        print("The advance ratio was above the range of advance ratios tested on the propeller.")
+        logger.warning("The advance ratio was above the range of advance ratios tested on the propeller.")
         return 0
 
     i = 0
@@ -223,7 +278,7 @@ print('\nWelcome to the motor-propeller matcher!\n'
 
 
 print("Next, enter the performance targets.")
-target_speed = float(input("Enter your target speed in m/s: ")) # m/s
+target_speed = float(input("Enter your target speed in m/s: "))  # m/s
 T_req = float(input("Enter how many newtons of thrust per propeller you need "
                     "to achieve level flight at target speed: "))  # N
 
@@ -254,9 +309,6 @@ while proceed != 'y':
     proceed = input("\nContinue? (y/n): ").lower()
 
 propellers = []
-
-# now do motors!
-
 for file in os.listdir(os.getcwd()):
     if file[-4:] == ".txt" or file[-4:] == ".dat":  # because these read the same, right?
         propellers.append(read_propeller_data(file))
