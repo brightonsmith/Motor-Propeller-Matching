@@ -18,6 +18,8 @@ Stuff I wanna put in:
 - Make a plot of combined efficiency [myeh, maybe]
 
 - Since motors and ESCs suffer losses under throttle, I should include this in the efficiency calculation
+
+- Make a list of the top 10 combinations and output a text file in addition to printing it.
 '''
 
 '''
@@ -304,132 +306,141 @@ motors = []
 for file in os.listdir(os.getcwd()):
     if file[-4:] == ".txt" or file[-4:] == ".dat":
         motors.append(read_motor_data(file))
+os.chdir("{}//..".format(os.getcwd()))
+
+try:
+    logger.info("Results directory created.")
+    os.mkdir("Results")
+except FileExistsError:
+    logger.info("Results directory already existed.")
+os.chdir("{}//Results".format(os.getcwd()))
+
 
 for motor in motors:
+    print("\nTesting each propeller with {}...".format(motor['name']))
+    logger.info("\nTesting each propeller with {}...".format(motor['name']))
     for propeller in propellers:
-        print("Look ma! I'm matching the {} motor with the {} propeller!".format(motor['name'], propeller['name']))
-
-'''
-for propeller in propellers:
-    def T(n, rho=1.225, handle_array=False):  # This isn't good but I don't know how else to do it | Well maybe it's not so bad
-        """
-        :param n: rotations per second
-        :param rho: mass density of air, default 1.225 kg/m^3
-        :return: thrust in N
-        """
-        return (1 / 2) * rho * (n * (propeller['diameter'] / 2))**2 * np.pi * (propeller['diameter'] / 2)**2\
-               * pull_from_data(J(target_speed, n, propeller['diameter']), propeller['J'], propeller['Ct'], handle_array)
+        def T(n, rho=1.225, handle_array=False):  # This isn't good but I don't know how else to do it | Well maybe it's not so bad
+            """
+            :param n: rotations per second
+            :param rho: mass density of air, default 1.225 kg/m^3
+            :return: thrust in N
+            """
+            return (1 / 2) * rho * (n * (propeller['diameter'] / 2))**2 * np.pi * (propeller['diameter'] / 2)**2\
+                   * pull_from_data(J(target_speed, n, propeller['diameter']), propeller['J'], propeller['Ct'], handle_array)
 
 
-    # find required RPM by matching prop thrust to thrust required
-    min_n = target_speed / (propeller['J'][-1] * propeller['diameter'])
-    max_n = target_speed / (propeller['J'][0] * propeller['diameter'])
-    required_RPM = modified_regula_falsi(T, (min_n, max_n), T_req, 0.001) * 60
-    # print("Required RPM: {}".format(required_RPM))
-    n = np.linspace(min_n, max_n)
+        # find required RPM by matching prop thrust to thrust required
+        min_n = target_speed / (propeller['J'][-1] * propeller['diameter'])
+        max_n = target_speed / (propeller['J'][0] * propeller['diameter'])
+        required_RPM = modified_regula_falsi(T, (min_n, max_n), T_req, 0.001) * 60
+        # print("Required RPM: {}".format(required_RPM))
+        n = np.linspace(min_n, max_n)
 
-    fig = plt.figure("Motor Propeller Matcher", figsize=(13.03408/2, 8.5))
+        fig = plt.figure("Motor Propeller Matcher", figsize=(13.03408/2, 8.5))
 
-    # Plot the thrust of the propeller at target speed as a function of n ooh also plot thrust line
-    p1 = fig.add_subplot(4, 1, 2)
-    p1.set(title="Thrust for {} at {:.2f} m/s".format(propeller['name'], target_speed),
-           xlabel='RPM',
-           ylabel='Thrust (N)',
-           xlim=(0, required_RPM * 3),
-           ylim=(0, T(required_RPM / 60) * 6))
+        # Plot the thrust of the propeller at target speed as a function of n ooh also plot thrust line
+        p1 = fig.add_subplot(4, 1, 2)
+        p1.set(title="Thrust for {} at {:.2f} m/s".format(propeller['name'], target_speed),
+               xlabel='RPM',
+               ylabel='Thrust (N)',
+               xlim=(0, required_RPM * 3),
+               ylim=(0, T(required_RPM / 60) * 6))
 
-    p1.plot(n * 60, T(n, handle_array=True),
-            label='prop thrust at target speed')
-    p1.plot(np.linspace(0, max_n * 60 * 2), T_req * np.ones(50), linestyle='dashed',  # / 4 is there
-            label='thrust required for level flight')
-    p1.plot((required_RPM, required_RPM), p1.get_ylim(), color='red', label='Required RPM')
+        p1.plot(n * 60, T(n, handle_array=True),
+                label='prop thrust at target speed')
+        p1.plot(np.linspace(0, max_n * 60 * 2), T_req * np.ones(50), linestyle='dashed',  # / 4 is there
+                label='thrust required for level flight')
+        p1.plot((required_RPM, required_RPM), p1.get_ylim(), color='red', label='Required RPM')
 
-    p1.legend(loc='upper right')
+        p1.legend(loc='upper right')
 
-    # Plot the efficiency curve of the propeller
-    p4 = fig.add_subplot(4, 1, 1)
-    p4.set(title='Efficiency for {} at {:.2f} m/s'.format(propeller['name'], target_speed),  # figure out how to abstract (or not)
-           xlabel='RPM',
-           ylabel='$ \eta_p $',
-           ylim=(0, 1),
-           xlim=(0, required_RPM * 3))
+        # Plot the efficiency curve of the propeller
+        p4 = fig.add_subplot(4, 1, 1)
+        p4.set(title='Efficiency for {} at {:.2f} m/s'.format(propeller['name'], target_speed),  # figure out how to abstract (or not)
+               xlabel='RPM',
+               ylabel='$ \eta_p $',
+               ylim=(0, 1),
+               xlim=(0, required_RPM * 3))
 
-    p4.scatter(omega(target_speed, propeller['J'], propeller['diameter'], True) * 60, propeller['eta'],
-               label='Efficiency for {}'.format(propeller['name']))
-    p4.plot((required_RPM, required_RPM), p4.get_ylim(), color='red', label='Required RPM')
-    propeller_efficiency = pull_from_data(J(target_speed, required_RPM / 60, propeller['diameter']),
-                                          propeller['J'], propeller['eta'])
-    p4.text(0, 0, "Efficiency: {:.2f}".format(propeller_efficiency))
+        p4.scatter(omega(target_speed, propeller['J'], propeller['diameter'], True) * 60, propeller['eta'],
+                   label='Efficiency for {}'.format(propeller['name']))
+        p4.plot((required_RPM, required_RPM), p4.get_ylim(), color='red', label='Required RPM')
+        propeller_efficiency = pull_from_data(J(target_speed, required_RPM / 60, propeller['diameter']),
+                                              propeller['J'], propeller['eta'])
+        p4.text(0, 0, "Efficiency: {:.2f}".format(propeller_efficiency))
 
-    p4.legend(loc='upper right')
-
-
-    # Calculate the required torque for level flight
-    def Q(n, rho=1.225, handle_array=False):
-        """
-        :param n: rotations per second
-        :param rho: mass density of air, default 1.225 kg/m^3
-        :return: torque in N m
-        """
-        return (1 / 2) * rho * (n * (propeller['diameter'] / 2))**2 * np.pi * (propeller['diameter'] / 2)**3\
-               * pull_from_data(J(target_speed, n, propeller['diameter']), propeller['J'], propeller['Cp'],
-                                handle_array)
+        p4.legend(loc='upper right')
 
 
-    required_torque = Q(required_RPM / 60)
+        # Calculate the required torque for level flight
+        def Q(n, rho=1.225, handle_array=False):
+            """
+            :param n: rotations per second
+            :param rho: mass density of air, default 1.225 kg/m^3
+            :return: torque in N m
+            """
+            return (1 / 2) * rho * (n * (propeller['diameter'] / 2))**2 * np.pi * (propeller['diameter'] / 2)**3\
+                   * pull_from_data(J(target_speed, n, propeller['diameter']), propeller['J'], propeller['Cp'],
+                                    handle_array)
 
 
-    # Calculate the required voltage for level flight
-    def voltage(n, Q, kV, i0, R):
-        return (kV * Q + i0) * R + n / kV
+        required_torque = Q(required_RPM / 60)
 
 
-    required_voltage = voltage(required_RPM / 60, required_torque, motor['kV'], motor['i0'], motor['R'])
-
-    # Plot the torque of the propeller at target speed as a function of voltage and n
-    p3 = fig.add_subplot(4, 1, 3)
-    p3.set(title='Torque for ' + motor['name'] + ' and ' + propeller['name'],
-           xlabel='RPM',
-           ylabel='Torque (Nm)',
-           xlim=(0, required_RPM * 3),
-           ylim=(0, Q_m(i(required_voltage, 0, motor['kV'], motor['R']), motor['i0'], motor['kV']) * 1.1))
-
-    n_mot = np.linspace(0, motor['kV'] * required_voltage, 500, False)
-
-    p3.plot(n_mot * 60, Q_m(i(required_voltage, n_mot, motor['kV'], motor['R']), motor['i0'], motor['kV']),
-            label='motor at {:.1f} volts'.format(required_voltage))
-    p3.plot(n * 60, Q(n, handle_array=True),
-            label='prop torque curve at target speed')
-    p3.plot((required_RPM, required_RPM), p3.get_ylim(), color='red', label='Required RPM')
-
-    p3.legend(loc='upper right')
+        # Calculate the required voltage for level flight
+        def voltage(n, Q, kV, i0, R):
+            return (kV * Q + i0) * R + n / kV
 
 
-    # Plot the efficiency curves of the motor as a function of n and voltage
-    p2 = fig.add_subplot(4, 1, 4)
-    p2.set(title='Efficiency Curve for ' + motor['name'],
-           xlabel='RPM',
-           ylabel='$ \eta_m $',
-           ylim=(0, 1),
-           xlim=(0, required_RPM * 3))
+        required_voltage = voltage(required_RPM / 60, required_torque, motor['kV'], motor['i0'], motor['R'])
 
-    p2.plot(n_mot * 60,
-            eta_m(motor['i0'], required_voltage, motor['R'], i(required_voltage, n_mot, motor['kV'], motor['R'])),
-            label='{:.1f} volts'.format(required_voltage))
-    p2.plot((required_RPM, required_RPM), p2.get_ylim(), color='red', label='Required RPM')
-    motor_efficiency = eta_m(motor['i0'], required_voltage, motor['R'], i(required_voltage,
-                                                                       required_RPM / 60, motor['kV'], motor['R']))
-    p2.text(0, 0, "Efficiency: {:.2f}".format(motor_efficiency))
+        # Plot the torque of the propeller at target speed as a function of voltage and n
+        p3 = fig.add_subplot(4, 1, 3)
+        p3.set(title='Torque for ' + motor['name'] + ' and ' + propeller['name'],
+               xlabel='RPM',
+               ylabel='Torque (Nm)',
+               xlim=(0, required_RPM * 3),
+               ylim=(0, Q_m(i(required_voltage, 0, motor['kV'], motor['R']), motor['i0'], motor['kV']) * 1.1))
 
-    p2.legend(loc='upper right')
+        n_mot = np.linspace(0, motor['kV'] * required_voltage, 500, False)
 
-    print("{} total efficiency: {:.2f}".format(propeller['name'], propeller_efficiency * motor_efficiency))
-    print("{} Advance Ratio at required RPM: {:.2f}".format(propeller['name'], target_speed / (required_RPM / 60 * propeller["diameter"])))
+        p3.plot(n_mot * 60, Q_m(i(required_voltage, n_mot, motor['kV'], motor['R']), motor['i0'], motor['kV']),
+                label='motor at {:.1f} volts'.format(required_voltage))
+        p3.plot(n * 60, Q(n, handle_array=True),
+                label='prop torque curve at target speed')
+        p3.plot((required_RPM, required_RPM), p3.get_ylim(), color='red', label='Required RPM')
 
-    fig.subplots_adjust(top=0.969, bottom=0.061, left=0.150, right=0.850, hspace=0.485)
-    plt.savefig("{}.jpg".format(propeller['name'] + "with" + motor['name']))
-    fig.delaxes(p1)
-    fig.delaxes(p2)
-    fig.delaxes(p3)
-    fig.delaxes(p4)
-'''
+        p3.legend(loc='upper right')
+
+
+        # Plot the efficiency curves of the motor as a function of n and voltage
+        p2 = fig.add_subplot(4, 1, 4)
+        p2.set(title='Efficiency Curve for ' + motor['name'],
+               xlabel='RPM',
+               ylabel='$ \eta_m $',
+               ylim=(0, 1),
+               xlim=(0, required_RPM * 3))
+
+        p2.plot(n_mot * 60,
+                eta_m(motor['i0'], required_voltage, motor['R'], i(required_voltage, n_mot, motor['kV'], motor['R'])),
+                label='{:.1f} volts'.format(required_voltage))
+        p2.plot((required_RPM, required_RPM), p2.get_ylim(), color='red', label='Required RPM')
+        motor_efficiency = eta_m(motor['i0'], required_voltage, motor['R'], i(required_voltage,
+                                                                           required_RPM / 60, motor['kV'], motor['R']))
+        p2.text(0, 0, "Efficiency: {:.2f}".format(motor_efficiency))
+
+        p2.legend(loc='upper right')
+
+        print("    {} total efficiency: {:.2f}".format(propeller['name'], propeller_efficiency * motor_efficiency))
+        logger.info("    {} total efficiency: {:.2f}".format(propeller['name'], propeller_efficiency * motor_efficiency))
+        print("    {} Advance Ratio at required RPM: {:.2f}".format(propeller['name'], target_speed / (required_RPM / 60 * propeller["diameter"])))
+        logger.info("    {} Advance Ratio at required RPM: {:.2f}".format(propeller['name'], target_speed / (required_RPM / 60 * propeller["diameter"])))
+
+        fig.subplots_adjust(top=0.969, bottom=0.061, left=0.150, right=0.850, hspace=0.485)
+        plt.savefig("{}.jpg".format(propeller['name'] + "with" + motor['name']))
+        fig.delaxes(p1)
+        fig.delaxes(p2)
+        fig.delaxes(p3)
+        fig.delaxes(p4)
+
