@@ -1,5 +1,5 @@
 # Motor-Propeller-Matching
- A Python script for evaluating efficiency alignment of a motor/propeller combination.
+A Python script for evaluating efficiency alignment of a motor/propeller combination.
 
 
 To properly enter propeller data, you must choose a file with the following example format:
@@ -10,7 +10,7 @@ J       CT       CP       eta
 0.255   0.0916   0.0548   0.427
 etc...
 ```
-If pulling from the UIUC database, note that you will ususally have to combine a couple files
+If pulling from the UIUC database, note that you will usually have to combine a couple files
 to get the whole advance ratio range.
 
 For Automated Versions (2.X.X+):
