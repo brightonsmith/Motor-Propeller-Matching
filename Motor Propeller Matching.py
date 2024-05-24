@@ -7,56 +7,7 @@ import logging
 This is for level flight calculations, not for static thrust.
 '''
 
-'''
-Stuff I wanna put in:
-- Choose from a list of motors or use manual entry
-- Make it to where you just enter the filename of a motor and the filename of a propeller.
-- Pull directly from UIUC-style eta, Ct, Cp data  [DONE]
-  * and figure out how to easily pull the proper Ct and Cp given the advance ratio  [DONE]
-  * After essential functions finished, find out how to pull photos  [DONE]
-- Automate the process by manipulating the equations  [DONE]
-- Make a plot of combined efficiency [myeh, maybe]
-
-- Since motors and ESCs suffer losses under throttle, I should include this in the efficiency calculation
-
-- Make a list of the top 10 combinations and output a text file in addition to printing it. [DONE]
-
-- remove magic numbers (near the end in outputting the advance ratio) (Use the dang j function)
-
-- you need docstrings for every function boi
-'''
-
-'''
--Notes-
-The naming convention isn't consistent, nor is the order for the UIUC data, so watch out
-Turns out you're just gonna have to make a custom data file each time. This might not be
-such a big deal now that it might be best anyways
-
-The big update for this version is the automation
-
-Propeller reading is different too
-
-Process of making a good propeller file:  (Hold off on this for now)
-1. Create .txt file with valid name
-2. Find the right raw propeller files
-3. Take the top two
-4. Copy the low J to the good propeller file
-5. Go backwards from good file and forwards from remaining raw file and find the minimal positive difference
-6. Overwrite everything following the minimal positive difference good file number with everything past the minimal
-    positive difference raw file number
-7. done!
-
-Better process of making a good propeller file:  (Hold off on this for now)
-1. Create .txt file with valid name
-2. Find the right raw propeller files
-3. Take the top two
-4. Copy the low J to the good propeller file
-5. Copy data from hi J vals starting with the one that is the next largest after the highest low j val
-6. done!
-
-Next maybe look at acceleration and decelaration conditions
-'''
-
+# TODO: Motor and propeller file formatting/directory navigation/naming
 
 # Logging Setup #
 logger = logging.getLogger("Motor Propeller Matcher")
@@ -69,47 +20,47 @@ fh.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)-8s %(messag
 logger.addHandler(fh)
 # End Logging Setup #
 
-
-def modified_regula_falsi(f, bounds, target, tol):
+def modified_regula_falsi(f, bounds, target, tol, max_iterations=100):
     """
-    solve for an x value at a given y value
+    Solve for an x value at a given y value using the Regula Falsi method.
 
     INPUTS
     ------
     f : function
-        function to be evaluated
+        Function to be evaluated.
     bounds: list or tuple
-            list or tuple with two elements that bound the regula-falsi method
+        List or tuple with two elements that bound the Regula Falsi method.
     target: float
-            the f(x) value at which you are trying to find the x value of
-    tol:    float
-            the tolerance between the estimated f(x) value and the actual f(x) value
+        The f(x) value at which you are trying to find the x value.
+    tol: float
+        The tolerance between the estimated f(x) value and the actual f(x) value.
+    max_iterations: int, optional
+        Maximum number of iterations to prevent infinite loops (default is 100).
 
     OUTPUTS
     -------
     x : float
-        the x value at which the estimated f(x) value is close enough to the target as specified by the tol
+        The x value at which the estimated f(x) value is close enough to the target as specified by the tolerance.
     """
-    iterations = 0
-    a = bounds[0]
-    b = bounds[1]
-    x = b + ((target - f(b)) * (b - a)) / (f(b) - f(a))
-    while abs(f(x) - target) > tol:
-        iterations += 1
-        if iterations > 100:
-            logger.error("Regula-Falsi method did not converge after 100 iterations.")
-            raise RuntimeError("Regula-Falsi method did not converge after 100 iterations.")
-        if np.sign(f(x) - target) == np.sign(f(a) - target):
+    a, b = bounds
+    for _ in range(max_iterations):
+        fa, fb = f(a), f(b)
+        x = b - (fb - target) * (b - a) / (fb - fa)
+        fx = f(x)
+        
+        if abs(fx - target) <= tol:
+            return x
+        
+        if np.sign(fx - target) == np.sign(fa - target):
             a = x
         else:
             b = x
-        x = b + ((target - f(b)) * (b - a)) / (f(b) - f(a))
-    return x
-
+    
+    logger.error("Regula Falsi method did not converge after %d iterations.", max_iterations)
+    raise RuntimeError("Regula Falsi method did not converge after {} iterations.".format(max_iterations))
 
 def interpolate(x, x1, x2, y1, y2):
     return (x - x1) * ((y2 - y1) / (x2 - x1)) + y1
-
 
 def read_propeller_data(filename):
     propeller = {
@@ -121,43 +72,54 @@ def read_propeller_data(filename):
         'Cp': [],
         'eta': []
     }
+
+    # Extract propeller name, diameter, and pitch from filename
+    base_filename = filename[:filename.rindex('.')]
+    name, diameter_pitch = base_filename.rsplit(' ', 1)
+    diameter_str, pitch_str = diameter_pitch.split('x')
+    propeller['name'] = name
+    propeller['diameter'] = float(diameter_str) * 2.54 / 100  # Convert inches to meters
+    propeller['pitch'] = float(pitch_str) * 2.54 / 100  # Convert inches to meters
+
+    # Read and parse propeller data
     with open(filename, 'r') as file:
-        extensionless_filename = filename[:filename.rindex('.')]
-        x_index = extensionless_filename.lower().rindex('x')
-        space_index = extensionless_filename.rindex(' ')
-        propeller['name'] = extensionless_filename
-        propeller['diameter'] = float(extensionless_filename[space_index + 1:x_index]) * 2.54 / 100  # Convert inches to meters
-        propeller['pitch'] = float(extensionless_filename[x_index + 1:]) * 2.54 / 100  # Convert inches to meters
-        file.readline()
+        next(file)  # Skip header line
         for line in file:
-            splitted = line.split()
-            if splitted:
-                propeller['J'].append(float(splitted[0]))
-                propeller['Ct'].append(float(splitted[1]))
-                propeller['Cp'].append(float(splitted[2]))
-                propeller['eta'].append(float(splitted[3]))
+            data = line.split()
+            if data:
+                propeller['J'].append(float(data[0]))
+                propeller['Ct'].append(float(data[1]))
+                propeller['Cp'].append(float(data[2]))
+                propeller['eta'].append(float(data[3]))
 
     return propeller
 
-
 # Motor functions
-
 def read_motor_data(filename):
     motor = {
         'name': "",
-        'kV': 0,       # remember to convert to rps / volt
-        'i0': 0,       # Amps
-        'R': 0         # Ohms
+        'kV': 0,
+        'i0': 0,
+        'R': 0
     }
+
+    # Extract motor name from filename
+    motor['name'] = filename[:filename.rindex('.')]
+
+    # Read motor data from file
     with open(filename, 'r') as file:
-        extensionless_filename = filename[:filename.rindex('.')]
-        motor['name'] = extensionless_filename
-        motor['kV'] = float(file.readline()) / 60    # Converted from rpm/volt to rps/volt
-        motor['i0'] = float(file.readline())         # Amps
-        motor['R'] = float(file.readline())          # Ohms
+        lines = file.readlines()
+
+        # Ensure at least three lines are present
+        if len(lines) < 3:
+            raise ValueError("Insufficient data in motor file.")
+
+        # Extract and parse motor data
+        motor['kV'] = float(lines[0].strip()) / 60  # Convert rpm/volt to rps/volt
+        motor['i0'] = float(lines[1].strip())      # Amps
+        motor['R'] = float(lines[2].strip())       # Ohms
 
     return motor
-
 
 def eta_m(i0, V, R, i):
     """
@@ -281,21 +243,15 @@ def omega(V, J, D, handle_array=False):
 
 rpm_to_rps = 1 / 60
 
-print('\nWelcome to the motor-propeller matcher!\n'
-      'I hope that you find this tool useful for matching a motor and propeller.\n'
-      'Make sure you\'ve read the readme!\n')
-
+print('\nWelcome to the motor-propeller matcher!\n')
 
 print("Enter the performance targets.")
 target_speed = float(input("Enter your target speed in m/s: "))  # m/s
-T_req = float(input("Enter how many newtons of thrust per propeller you need "
+T_req = float(input("Enter how many newtons of thrust per propeller you estimate is needed "
                     "to achieve level flight at target speed: "))  # N
 
-
-propeller_directory = input("\nEnter the name of the directory containing your prepared propeller files.\n"
-                            "This directory must be in the same directory as the script.\n"
-                            " > ")
-os.chdir("{}//{}".format(os.getcwd(), propeller_directory))
+propeller_directory = input("\nEnter the name of the directory containing your prepared propeller files.\n> ")
+os.chdir("{}//{}".format(os.getcwd(), propeller_directory)) # TODO: format
 propellers = []
 for file in os.listdir(os.getcwd()):
     if file[-4:] == ".txt" or file[-4:] == ".dat":
@@ -303,9 +259,7 @@ for file in os.listdir(os.getcwd()):
 os.chdir("{}//..".format(os.getcwd()))
 
 
-motor_directory = input("\nEnter the name of the directory containing your prepared motor files.\n"
-                            "This directory must be in the same directory as the script.\n"
-                            " > ")
+motor_directory = input("\nEnter the name of the directory containing your prepared motor files.\n> ")
 os.chdir("{}//{}".format(os.getcwd(), motor_directory))
 motors = []
 for file in os.listdir(os.getcwd()):
@@ -326,7 +280,7 @@ for motor in motors:
     print("\nTesting each propeller with {}...".format(motor['name']))
     logger.info("\nTesting each propeller with {}...".format(motor['name']))
     for propeller in propellers:
-        def T(n, rho=1.225, handle_array=False):  # This isn't good but I don't know how else to do it | Well maybe it's not so bad
+        def T(n, rho=1.225, handle_array=False): # TODO: Optimize
             """
             :param n: rotations per second
             :param rho: mass density of air, default 1.225 kg/m^3
@@ -335,8 +289,7 @@ for motor in motors:
             return (1 / 2) * rho * (n * (propeller['diameter'] / 2))**2 * np.pi * (propeller['diameter'] / 2)**2\
                    * pull_from_data(J(target_speed, n, propeller['diameter']), propeller['J'], propeller['Ct'], handle_array)
 
-
-        # find required RPM by matching prop thrust to thrust required
+        # Find required RPM by matching prop thrust to thrust required
         min_n = target_speed / (propeller['J'][-1] * propeller['diameter'])
         max_n = target_speed / (propeller['J'][0] * propeller['diameter'])
         required_RPM = modified_regula_falsi(T, (min_n, max_n), T_req, 0.001) * 60
@@ -345,7 +298,7 @@ for motor in motors:
 
         fig = plt.figure("Motor Propeller Matcher", figsize=(13.03408/2, 8.5))
 
-        # Plot the thrust of the propeller at target speed as a function of n ooh also plot thrust line
+        # Plot the thrust of the propeller at target speed as a function of n
         p1 = fig.add_subplot(4, 1, 2)
         p1.set(title="Thrust for {} at {:.2f} m/s".format(propeller['name'], target_speed),
                xlabel='RPM',
@@ -390,14 +343,11 @@ for motor in motors:
                    * pull_from_data(J(target_speed, n, propeller['diameter']), propeller['J'], propeller['Cp'],
                                     handle_array)
 
-
         required_torque = Q(required_RPM / 60)
-
 
         # Calculate the required voltage for level flight
         def voltage(n, Q, kV, i0, R):
             return (kV * Q + i0) * R + n / kV
-
 
         required_voltage = voltage(required_RPM / 60, required_torque, motor['kV'], motor['i0'], motor['R'])
 
@@ -478,11 +428,13 @@ for motor in motors:
         while len(top_10) > 10:
             top_10.pop(-1)
 
-with open("Top ten most efficient combinations.txt", 'w') as top_10_file:
+with open("Results.txt", 'w') as results_file:
     rank = 1
     for result in top_10:
-        top_10_file.write("{}) {} Efficiency: {:.2f} Advance ratio at required RPM: {:.2f}\n"
+        results_file.write("{}) {} Efficiency: {:.2f} Advance ratio at required RPM: {:.2f}\n"
                           .format(rank, result['name'], round(result['efficiency'], 2), round(result['advance ratio'], 2)))
         rank += 1
 
 os.chdir("{}//..".format(os.getcwd()))
+print("Results saved to './Results.txt'")
+print("Done")
