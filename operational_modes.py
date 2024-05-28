@@ -69,6 +69,18 @@ class OperationalMode:
         # TODO: Docstring
         return (torque_req * kV + i0) * R + (RPM_req / 60) / kV
     
+    def get_eta_m(i0, V, R, i):
+        """
+        Calculate motor efficiency.
+
+        :param i0: No load current in amps
+        :param V: Potential difference in volts
+        :param R: Resistance in ohms
+        :param i: Current in amps
+        :return: Dimensionless efficiency between 0 and 1
+        """
+        return ((i - i0) * (V - i * R)) / (V * i)
+    
 class StaticThrust(OperationalMode):
     def __init__(self, thrust_req, prop_dir, motor_dir, logger):
         super().__init__(thrust_req, prop_dir, motor_dir, logger)
@@ -143,9 +155,9 @@ class StaticThrust(OperationalMode):
                 spline = CubicSpline(thrust_vals, RPM_vals)
                 RPM_req = spline(self.thrust_req)
                 self.RPM_req_dic[prop_id] = RPM_req
-                self.logger.info(f"Required RPM for {prop_id}: {RPM_req}")
+                self.logger.info(f"Required RPM for prop {prop_id}: {RPM_req}")
             else:
-                self.logger.warning(f"Desired thrust is out of range for propeller {prop_id}.")
+                self.logger.warning(f"Desired thrust is out of range for prop {prop_id}.")
 
     def get_voltage_req(self):
         for prop_id, RPM_req in self.RPM_req_dic.items():
@@ -175,9 +187,34 @@ class StaticThrust(OperationalMode):
                 if voltage_req <= motor['V_tol']:
                     self.voltage_req_dic[prop_id][motor_id] = voltage_req
                 else:
-                    self.logger.warning(f"Required voltage is beyond the voltage tolerance for propeller {prop_id} with motor {motor_id}.")
+                    self.logger.warning(f"Required voltage is beyond the voltage tolerance for prop {prop_id} with motor {motor_id}.")
                 
                 self.logger.info(f"Required voltage for {prop_id} with motor {motor_id}: {voltage_req}")
+
+            # TODO: Torque required curves for plotting
+
+    def get_eta_m_dic(self):
+        for prop_id, motor_voltage_dict in self.voltage_req_dic.items():
+            self.eta_m_dic[prop_id] = {}
+
+            for motor_id, voltage_req in motor_voltage_dict.items():
+                motor_row = self.motor_data[self.motor_data['ID'] == motor_id].iloc[0]
+                kV = motor_row['kV']
+                i0 = motor_row['i0']
+                R = motor_row['R']
+
+                RPM_req = self.RPM_req_dic[prop_id]
+                current = (voltage_req - RPM_req / kV) / R
+
+                eta_m = self.get_eta_m(i0, voltage_req, R, current)
+
+                if 0 <= eta_m <= 1:
+                    self.eta_m_dic[prop_id][motor_id] = eta_m
+                else:
+                    self.logger.warning(f"Eta_m for prop {prop_id} with motor {motor_id} is out of range.")
+
+                self.logger.info(f"Motor efficiency for {prop_id} with motor {motor_id}: {eta_m}")
+    
 
 class StableFlight(OperationalMode):
     def __init__(self, thrust_req, prop_dir, motor_dir, target_velocity, logger):
