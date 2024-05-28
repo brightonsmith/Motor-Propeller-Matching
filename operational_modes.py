@@ -19,7 +19,8 @@ class OperationalMode:
             'ID': [],
             'kV': [],
             'i0': [],
-            'R': []
+            'R': [],
+            'V_tol': [],
         }
 
         for filename in os.listdir(motor_dir):
@@ -30,14 +31,15 @@ class OperationalMode:
                 try:
                     with open(filepath, 'r') as file:
                         lines = file.readlines()
-                        if len(lines) == 3:
-                            motor_data['name'].append(id)
-                            motor_data['kV'].append(float(lines[0].strip()) / 60)  # rps/volt
+                        if len(lines) == 4:
+                            motor_data['ID'].append(id)
+                            motor_data['kV'].append(float(lines[0].strip()) / 60)   # rps/volt
                             motor_data['i0'].append(float(lines[1].strip()))        # Amps
                             motor_data['R'].append(float(lines[2].strip()))         # Ohms
+                            motor_data['V_tol'].append(float(lines[3].strip()))     # Volts
                         else:
                             self.logger.error(f"File {filename} does not contain three lines.")
-                            print(f"File {filename} does not contain three lines. See README for formatting details.")
+                            print(f"File {filename} does not contain four lines. See README for formatting details.")
                 except Exception as e:
                     self.logger.error(f"Error reading {filename}: {e}")
                     print(f"Error reading {filename}: {e}. See README for formatting details.")
@@ -62,6 +64,10 @@ class OperationalMode:
         # TODO: Docstring
         i = (V - (RPM / 60) / kV) / R
         return (i - i0) / kV
+    
+    def get_voltage_req(self, torque_req, kV, i0, R, RPM_req):
+        # TODO: Docstring
+        return (torque_req * kV + i0) * R + (RPM_req / 60) / kV
     
 class StaticThrust(OperationalMode):
     def __init__(self, thrust_req, prop_dir, motor_dir, logger):
@@ -123,10 +129,10 @@ class StaticThrust(OperationalMode):
             thrust_vals = []
             RPM_vals = []
 
-            for _, row in prop_subset.iterrows():
-                thrust = self.get_thrust(row['diameter'], row['RPM'], row['Ct'])
+            for _, prop in prop_subset.iterrows():
+                thrust = self.get_thrust(prop['diameter'], prop['RPM'], prop['Ct'])
                 thrust_vals.append(thrust)
-                RPM_vals.append(row['RPM'])
+                RPM_vals.append(prop['RPM'])
 
             sorted_indices = np.argsort(thrust_vals)
             thrust_vals = np.array(thrust_vals)[sorted_indices]
@@ -141,7 +147,37 @@ class StaticThrust(OperationalMode):
             else:
                 self.logger.warning(f"Desired thrust is out of range for propeller {prop_id}.")
 
-    
+    def get_voltage_req(self):
+        for prop_id, RPM_req in self.RPM_req_dic.items():
+            prop_subset = self.prop_data[self.prop_data['ID'] == prop_id]
+
+            prop_torque_vals = []
+            RPM_vals = []
+
+            for _, prop in prop_subset.iterrows():
+                prop_torque = self.get_prop_torque(prop['diameter'], prop['RPM'], prop['Cp'])
+                prop_torque_vals.append(prop_torque)
+                RPM_vals.append(prop['RPM'])
+
+            spline = CubicSpline(RPM_vals, prop_torque_vals)
+            torque_req = spline(RPM_req)
+
+            self.voltage_req_dic[prop_id] = {}
+
+            for _, motor in self.motor_data.iterrows():
+                motor_id = motor['ID']
+                kV = motor['kV']
+                i0 = motor['i0']
+                R = motor['R']
+
+                voltage_req = self.get_voltage_req(torque_req, kV, i0, R, RPM_req)
+
+                if voltage_req <= motor['V_tol']:
+                    self.voltage_req_dic[prop_id][motor_id] = voltage_req
+                else:
+                    self.logger.warning(f"Required voltage is beyond the voltage tolerance for propeller {prop_id} with motor {motor_id}.")
+                
+                self.logger.info(f"Required voltage for {prop_id} with motor {motor_id}: {voltage_req}")
 
 class StableFlight(OperationalMode):
     def __init__(self, thrust_req, prop_dir, motor_dir, target_velocity, logger):
