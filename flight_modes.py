@@ -1,18 +1,26 @@
 import os
 import pandas as pd
 import numpy as np
+import hashlib
 from scipy.interpolate import CubicSpline
-import utilities
 
-class OperationalMode:
-    def __init__(self, thrust_req, prop_dir, motor_dir, logger):
+class FlightMode:
+    def __init__(self, thrust_req, motor_dir, logger):
         self.logger = logger
         self.thrust_req = thrust_req
-        self.prop_dir = prop_dir
         self.motor_data = self.read_motor_dir(motor_dir)
         self.RPM_req_dic = {}
         self.voltage_req_dic = {}
         self.eta_m_dic = {}
+        self.results = []
+        self.signature = self.generate_signature()
+
+        self.logger.info(f"Initiated FlightMode object with signature: {self.signature}")
+        print(f"Initiated FlightMode object with signature: {self.signature}")
+
+    def generate_signature(self, prop_dir, motor_dir):
+        data_string = f"{self.thrust_req}_{prop_dir}_{motor_dir}"
+        return hashlib.md5(data_string.encode()).hexdigest()[:8]  # Generate a short unique signature
 
     def read_motor_dir(self, motor_dir):
         motor_data = {
@@ -65,7 +73,7 @@ class OperationalMode:
         i = (V - (RPM / 60) / kV) / R
         return (i - i0) / kV
     
-    def get_voltage_req(self, torque_req, kV, i0, R, RPM_req):
+    def build_voltage_req(self, torque_req, kV, i0, R, RPM_req):
         # TODO: Docstring
         return (torque_req * kV + i0) * R + (RPM_req / 60) / kV
     
@@ -81,12 +89,10 @@ class OperationalMode:
         """
         return ((i - i0) * (V - i * R)) / (V * i)
     
-class StaticThrust(OperationalMode):
+class StaticThrust(FlightMode):
     def __init__(self, thrust_req, prop_dir, motor_dir, logger):
-        super().__init__(thrust_req, prop_dir, motor_dir, logger)
+        super().__init__(thrust_req, motor_dir, logger)
         self.prop_data = self.read_prop_dir(prop_dir)
-
-        self.logger.info("Initialized StaticThrust object")
 
     def read_prop_dir(self, prop_dir):
         prop_data = {
@@ -97,45 +103,45 @@ class StaticThrust(OperationalMode):
             'Ct': [],
             'Cp': []
         }
+        for root, dirs, files in os.walk(prop_dir):
+            for filename in files:
+                if filename.endswith('.txt') and 'static' in filename:
+                    filepath = os.path.join(prop_dir, filename)
+                    parts = filename.split('_')
 
-        for filename in os.listdir(prop_dir):
-            if filename.endswith('.txt') and 'static' in filename:
-                filepath = os.path.join(prop_dir, filename)
-                parts = filename.split('_')
+                    # Extract make and model
+                    make = parts[0] 
+                    diameter_pitch = parts[1] 
+                    diameter, pitch = map(float, diameter_pitch.split('x'))
+                    model = parts[3].split('.')[0] 
+                    id = f"{make}-{model}" 
 
-                # Extract make and model
-                make = parts[0] 
-                diameter_pitch = parts[1] 
-                diameter, pitch = map(float, diameter_pitch.split('x'))
-                model = parts[3].split('.')[0] 
-                id = f"{make}-{model}" 
+                    try:
+                        with open(filepath, 'r') as file:
+                            lines = file.readlines()
+                            if len(lines) >= 2:
+                                for line in lines[1:]:  # Skip header line
+                                    if line.strip():  # Skip empty lines
+                                        rpm, ct, cp = map(float, line.strip().split())
+                                        prop_data['ID'].append(id)
+                                        prop_data['diameter'].append(diameter)
+                                        prop_data['pitch'].append(pitch)
+                                        prop_data['RPM'].append(rpm)
+                                        prop_data['Ct'].append(ct)
+                                        prop_data['Cp'].append(cp)
+                            else:
+                                self.logger.error(f"File {filename} does not contain enough lines.")
+                                print(f"File {filename} does not contain enough lines. See README for formatting details.")
+                    except Exception as e:
+                        self.logger.error(f"Error reading {filename}: {e}")
+                        print(f"Error reading {filename}: {e}. See README for formatting details.")
 
-                try:
-                    with open(filepath, 'r') as file:
-                        lines = file.readlines()
-                        if len(lines) >= 2:
-                            for line in lines[1:]:  # Skip header line
-                                if line.strip():  # Skip empty lines
-                                    rpm, ct, cp = map(float, line.strip().split())
-                                    prop_data['ID'].append(id)
-                                    prop_data['diameter'].append(diameter)
-                                    prop_data['pitch'].append(pitch)
-                                    prop_data['RPM'].append(rpm)
-                                    prop_data['Ct'].append(ct)
-                                    prop_data['Cp'].append(cp)
-                        else:
-                            self.logger.error(f"File {filename} does not contain enough lines.")
-                            print(f"File {filename} does not contain enough lines. See README for formatting details.")
-                except Exception as e:
-                    self.logger.error(f"Error reading {filename}: {e}")
-                    print(f"Error reading {filename}: {e}. See README for formatting details.")
+                    prop_df = pd.DataFrame(prop_data)
+                    self.logger.info("Processed propeller directory")
 
-                prop_df = pd.DataFrame(prop_data)
-                self.logger.info("Processed propeller directory")
-
-                return prop_df
+                    return prop_df
             
-    def get_RPM_req(self):
+    def build_RPM_req_dic(self):
         for prop_id in self.prop_data['ID'].unique():
             prop_subset = self.prop_data[self.prop_data['ID'] == prop_id]
             thrust_vals = []
@@ -159,7 +165,7 @@ class StaticThrust(OperationalMode):
             else:
                 self.logger.warning(f"Desired thrust is out of range for prop {prop_id}.")
 
-    def get_voltage_req(self):
+    def build_voltage_req_dic(self):
         for prop_id, RPM_req in self.RPM_req_dic.items():
             prop_subset = self.prop_data[self.prop_data['ID'] == prop_id]
 
@@ -182,7 +188,7 @@ class StaticThrust(OperationalMode):
                 i0 = motor['i0']
                 R = motor['R']
 
-                voltage_req = self.get_voltage_req(torque_req, kV, i0, R, RPM_req)
+                voltage_req = self.build_voltage_req(torque_req, kV, i0, R, RPM_req)
 
                 if voltage_req <= motor['V_tol']:
                     self.voltage_req_dic[prop_id][motor_id] = voltage_req
@@ -193,7 +199,7 @@ class StaticThrust(OperationalMode):
 
             # TODO: Torque required curves for plotting
 
-    def get_eta_m_dic(self):
+    def build_eta_m_dic(self):
         for prop_id, motor_voltage_dict in self.voltage_req_dic.items():
             self.eta_m_dic[prop_id] = {}
 
@@ -214,9 +220,37 @@ class StaticThrust(OperationalMode):
                     self.logger.warning(f"Eta_m for prop {prop_id} with motor {motor_id} is out of range.")
 
                 self.logger.info(f"Motor efficiency for {prop_id} with motor {motor_id}: {eta_m}")
-    
 
-class StableFlight(OperationalMode):
+    def write_results_file(self, filename):
+        for prop_id, motor_efficiency_dict in self.eta_m_dic.items():
+            RPM_required = self.RPM_req_dic.get(prop_id, None)
+            for motor_id, eta_m in motor_efficiency_dict.items():
+                voltage_req = self.voltage_req_dic[prop_id].get(motor_id, None)
+                self.results.append({
+                    'prop_id': prop_id,
+                    'motor_id': motor_id,
+                    'eta_m': eta_m,
+                    'voltage_req': voltage_req,
+                    'RPM_required': RPM_required
+                })
+
+        # Sort results by eta_m in descending order and select top 10
+        self.results = sorted(self.results, key=lambda x: x['eta_m'], reverse=True)[:10]
+
+        with open(filename, 'w') as file:
+            for i, result in enumerate(self.results, start=1):
+                file.write("----------------------------------------------------------\n")
+                file.write(f"Ranking: {i}\n")
+                file.write(f"Prop ID: {result['prop_id']}\n")
+                file.write(f"Motor ID: {result['motor_id']}\n")
+                file.write(f"eta_m: {result['eta_m']}\n")
+                file.write(f"Applied motor voltage: {result['voltage_req']}\n")
+                file.write(f"Desired RPM: {result['RPM_required']}\n")
+                file.write("----------------------------------------------------------\n")
+
+        self.logger.info(f"Results file {filename} created successfully.")
+
+class StableFlight(FlightMode):
     def __init__(self, thrust_req, prop_dir, motor_dir, target_velocity, logger):
         super().__init__(thrust_req, prop_dir, motor_dir, logger)
         self.target_velocity = target_velocity

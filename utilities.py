@@ -18,8 +18,8 @@ def get_user_inputs(logger):
     try:
         # Get the operation mode
         while True:
-            operation_mode = input("Enter operation mode (static thrust or stable flight): ").strip().lower()
-            if operation_mode in ["static thrust", "stable flight"]:
+            flight_mode = input("Enter operation mode (static thrust or stable flight): ").strip().lower()
+            if flight_mode in ["static thrust", "stable flight"]:
                 print("See the README to ensure your data files are formatted properly.")
                 break
             else:
@@ -66,7 +66,7 @@ def get_user_inputs(logger):
                 print("Invalid input. Please enter a positive number.")
 
         target_velocity = 0        
-        if operation_mode == 'stable flight':
+        if flight_mode == 'stable flight':
             while True:
                 try:
                     target_velocity = float(input("Enter target velocity in m/s: "))
@@ -100,7 +100,7 @@ def get_user_inputs(logger):
                 print("Invalid propeller directory.")
 
         # Log the inputs
-        logger.info(f"Operation mode: {operation_mode}")
+        logger.info(f"Operation mode: {flight_mode}")
         logger.info(f"Number of propellers: {num_props}")
         logger.info(f"Expected vehicle weight: {weight} kg")
         logger.info(f"Thrust factor: {thrust_factor}")
@@ -108,7 +108,7 @@ def get_user_inputs(logger):
         logger.info(f"Motor motor_dir: {motor_dir}")
         logger.info(f"Propeller motor_dir: {prop_dir}")
         
-        return operation_mode, num_props, weight, thrust_factor, target_velocity, motor_dir, prop_dir
+        return flight_mode, num_props, weight, thrust_factor, target_velocity, motor_dir, prop_dir
     
     except Exception as e:
         logger.error(f"Error while getting user inputs: {e}")
