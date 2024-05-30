@@ -5,20 +5,25 @@ import os
 # Set up Logger
 def setup_logger():
     logger = logging.getLogger("Powertrain Optimization")
-    logger.setLevel(logging.WARNING)
+    logger.setLevel(logging.DEBUG)  # Set logger level to DEBUG to capture all levels of log messages
+
     ch = logging.StreamHandler()
+    ch.setLevel(logging.ERROR)  # Console handler set to WARNING level
     ch.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)-8s %(message)s'))
     logger.addHandler(ch)
+
     fh = logging.FileHandler("Log.log")
+    fh.setLevel(logging.DEBUG)  # File handler set to INFO level
     fh.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)-8s %(message)s'))
     logger.addHandler(fh)
+    
     return logger
 
 def get_user_inputs(logger):
     try:
         # Get the operation mode
         while True:
-            flight_mode = input("Enter operation mode (static thrust or stable flight): ").strip().lower()
+            flight_mode = input("Enter flight mode (static thrust or stable flight): ").strip().lower()
             if flight_mode in ["static thrust", "stable flight"]:
                 print("See the README to ensure your data files are formatted properly.")
                 break
@@ -114,85 +119,152 @@ def get_user_inputs(logger):
         logger.error(f"Error while getting user inputs: {e}")
         raise
 
-def get_thrust_req(num_props, weight, thrust_factor, logger):
+def get_thrust_req(num_props, weight, thrust_factor):
     """
-    Calculate the thrust required from each propeller.
+    Calculate the required thrust per propeller.
 
-    :param num_props: Number of propellers
-    :param weight: Total weight of the vehicle (kg)
-    :param thrust_factor: Thrust factor (e.g., 1.2 for 20% extra thrust for stability)
-    :return: Thrust required per propeller (N)
+    :param num_props: Number of propellers.
+    :param weight: Expected vehicle weight in kg.
+    :param thrust_factor: Factor to ensure enough thrust beyond just lifting the weight.
+    :return: Required thrust per propeller in Newtons.
     """
-    total_thrust = weight * thrust_factor * 9.81
+    g = 9.81  # Acceleration due to gravity in m/s^2
+    total_thrust = weight * g * thrust_factor
     thrust_per_prop = total_thrust / num_props
-
-    logger.info(f"Thrust required per propeller: {thrust_per_prop} N")
     return thrust_per_prop
 
-# Motor functions
-def eta_m(self, i0, V, R, i):
-        """
-        :param i0: no load current in amps
-        :param V: potential difference in volts
-        :param R: resistance in ohms
-        :param i: current in amps
-        :return: dimensionless efficiency between 0 and 1
-        """
-        return ((i - i0) * (V - i * R)) / (V * i)
 
-def P_shaft(i0, V, R, n, kV):
+def get_thrust(diameter, RPM, Ct):
     """
-    :param i0: no load current in amps
-    :param V: potential difference in volts
-    :param R: resistance in ohms
-    :param n: rotations per second
-    :param kV: rotations per second per volt
-    :return: shaft power in watts
-    """
-    return ((V - n / kV) / R - i0) * n / kV
+    Calculate the thrust produced by the propeller.
 
-def current(V, n, kV, R):
+    :param diameter: Diameter of the propeller in meters
+    :param RPM: Revolutions per minute of the propeller
+    :param Ct: Thrust coefficient
+    :return: Thrust in Newtons
     """
-    :param V: potential difference in volts
-    :param n: rotations per second
-    :param kV: rotations per second per volt
-    :param R: resistance in ohms
-    :return: current in amps
-    """
-    return (V - n / kV) / R
+    rho = 1.225 # Air density in kg/m^3
+    omega = (RPM / 60) * 2 * np.pi # Angular rate
+    R = diameter / 2 # Radius
+    A = np.pi * R ** 2 # Propeller swept area
+    return 1/2 * rho * (omega * R) ** 2 * A * Ct
 
-def Q_m(i, i0, kV):
+def get_prop_torque(diameter, RPM, Cp):
     """
-    :param i: current in amps
-    :param i0:  no load current in amps
-    :param kV: rotations per second per volt
-    :return: shaft torque in N m
-    """
-    return (i - i0) / kV
+    Calculate the torque required by the propeller.
 
-# Propeller functions
-def J(V, n, D):
+    :param diameter: Diameter of the propeller in meters
+    :param RPM: Revolutions per minute of the propeller
+    :param Cp: Power coefficient
+    :return: Torque in Newton-meters
     """
-    find J as a function of (V)elocity, propeller rotatio(n)s per second, and propeller (D)iameter
+    rho = 1.225  # Air density in kg/m^3
+    omega = (RPM / 60) * 2 * np.pi # Angular rate
+    R = diameter / 2
+    A = np.pi * R ** 2 # Propeller swept area
+    return 1/2 * rho * (omega * R) ** 2 * A * R * Cp
 
-    :param V: airspeed in m/s
-    :param n: propeller rps
-    :param D: propeller diameter in m
-    :return:
+def get_motor_torque(V, kV, i0, R, RPM):
     """
-    return V / (n * D)
+    Calculate the torque produced by the motor.
 
-def omega(V, J, D, handle_array=False):
+    :param V: Voltage applied to the motor
+    :param kV: Motor constant in rpm/volt
+    :param i0: No load current in amps
+    :param R: Resistance in ohms
+    :param RPM: Revolutions per minute of the motor
+    :return: Torque in Newton-meters
     """
-    :param J: advance ratio
-    :param V: velocity in m/s
-    :param D: propeller diameter in m
-    :return: rotations per second
-    """
-    if handle_array:
-        result = []
-        for i in J:
-            result.append(omega(V, i, D))
-        return np.asarray(result)
+    omega = (RPM / 60) * 2 * np.pi # Angular rate
+    kV_mod = (kV / 60) * 2 * np.pi # rad/s/Volt
+    i = (V - omega / kV_mod) / R
+    return (i - i0) / kV_mod
 
-    return V / (J * D)
+def get_voltage_req(torque, kV, i0, R, RPM):
+    """
+    Calculate the voltage required to produce the specified torque.
+
+    :param torque_req: Required torque in Newton-meters
+    :param kV: Motor constant in rpm/volt
+    :param i0: No load current in amps
+    :param R: Resistance in ohms
+    :param RPM_req: Required revolutions per minute
+    :return: Voltage required in volts
+    """
+    omega = (RPM / 60) * 2 * np.pi # Angular rate
+    kV_mod = (kV / 60) * 2 * np.pi # rad/s/Volt
+    return (torque * kV_mod + i0) * R + omega / kV_mod
+
+def get_current(V, RPM, kV, R):
+    """
+    :param V: Potential difference in volts
+    :param RPM: Revolutions per minute of the motor
+    :param kV: Motor constant in rpm/volt
+    :param R: Resistance in ohms
+    :return: Current in amps
+    """
+    return (V - RPM / kV) / R
+
+def get_eta_m(i0, V, R, i):
+    """
+    Calculate motor efficiency.
+
+    :param i0: No load current in amps
+    :param V: Potential difference in volts
+    :param R: Resistance in ohms
+    :param i: Current in amps
+    :return: Dimensionless efficiency between 0 and 1
+    """
+    return ((i - i0) * (V - i * R)) / (V * i)
+
+def get_P_shaft(i0, V, R, i):
+    """
+    Calculate shaft power.
+
+    :param i0: No load current in amps
+    :param V: Potential difference in volts
+    :param R: Resistance in ohms
+    :param i: Current in amps
+    :return: Shaft power in Watts
+    """
+    return (i - i0) * (V - i*R)
+
+def get_P_elec(V, i):
+    """
+    Calculate electric power.
+    
+    :param V: Potential difference in volts
+    :param i: Current in amps
+    :return: electric power in Watts
+    """
+    return V * i
+
+def get_header(thrust_req):
+    header = (
+                f"==========================================================\n"
+                "Drone Motor-Propeller Optimization Results\n"
+                "==========================================================\n"
+                "This file contains the top 10 motor-propeller pairings \n"
+                "optimized for static thrust.\n"
+                "\n"
+                "Each pairing is evaluated based on motor efficiency (eta_m)\n"
+                "under the specified thrust requirements.\n"
+                f"Thrust requirement: {thrust_req:.2f} N"
+                "\n"
+                "Fields:\n"
+                "----------------------------------------------------------\n"
+                "Rank                 : Ranking (1 - 10)\n"
+                "Key                  : Unique identifier for the prop-motor pair\n"
+                "Prop ID              : Unique identifier for the propeller\n"
+                "Motor ID             : Unique identifier for the motor\n"
+                "Applied motor voltage: Voltage applied to the motor (V)\n"
+                "Applied motor current: Current applied to the motor (A)\n"
+                "Desired RPM          : Required RPM to achieve desired thrust (RPM)\n"
+                "Motor efficiency     : Motor efficiency (dimensionless)\n"
+                "Shaft power          : Power supplied by the motor shaft (W)\n"
+                "Electric power       : Power supplied to the motor (W)\n"
+                "----------------------------------------------------------\n"
+                "\n"
+                "Results:\n"
+            )
+    return header
