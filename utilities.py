@@ -4,6 +4,9 @@ import os
 
 # Set up Logger
 def setup_logger():
+    if os.path.exists('Log.log'):
+        os.remove('Log.log')
+
     logger = logging.getLogger("Powertrain Optimization")
     logger.setLevel(logging.DEBUG)  # Set logger level to DEBUG to capture all levels of log messages
 
@@ -21,7 +24,7 @@ def setup_logger():
 
 def get_user_inputs(logger):
     try:
-        # Get the operation mode
+        # Get the flight mode
         while True:
             flight_mode = input("Enter flight mode (static thrust or stable flight): ").strip().lower()
             if flight_mode in ["static thrust", "stable flight"]:
@@ -30,6 +33,16 @@ def get_user_inputs(logger):
             else:
                 logger.error("Invalid operation mode input.")
                 print("Invalid input. Please enter 'static thrust' or 'stable flight'.")
+
+        # Get data type
+        while True:
+            data_type = input("Enter data type (UIUC or TYTO): ").strip().upper()
+            if data_type in ["UIUC", "TYTO"]:
+                print("See the README to ensure your data files are formatted properly.")
+                break
+            else:
+                logger.error("Invalid data type input.")
+                print("Invalid input. Please enter 'UIUC' or 'TYTO'.")
         
         # Get the number of propellers
         while True:
@@ -60,14 +73,14 @@ def get_user_inputs(logger):
         # Get the thrust factor
         while True:
             try:
-                thrust_factor = float(input("Enter thrust factor: "))
+                thrust_factor = float(input("Enter desired thrust-to-weight ratio: "))
                 if thrust_factor > 0:
                     break
                 else:
-                    logger.error("Thrust factor not entered as a positive number.")
-                    print("Thrust factor must be a positive number.")
+                    logger.error("Thrust-to-weight ratio not entered as a positive number.")
+                    print("Thrust-to-weight ratio must be a positive number.")
             except ValueError:
-                logger.error("Thrust factor not entered as a positive number.")
+                logger.error("Thrust-to-weight ratio not entered as a positive number.")
                 print("Invalid input. Please enter a positive number.")
 
         target_velocity = 0        
@@ -105,7 +118,8 @@ def get_user_inputs(logger):
                 print("Invalid propeller directory.")
 
         # Log the inputs
-        logger.info(f"Operation mode: {flight_mode}")
+        logger.info(f"Flight mode: {flight_mode}")
+        logger.info(f"Data type: {data_type}")
         logger.info(f"Number of propellers: {num_props}")
         logger.info(f"Expected vehicle weight: {weight} kg")
         logger.info(f"Thrust factor: {thrust_factor}")
@@ -113,7 +127,7 @@ def get_user_inputs(logger):
         logger.info(f"Motor motor_dir: {motor_dir}")
         logger.info(f"Propeller motor_dir: {prop_dir}")
         
-        return flight_mode, num_props, weight, thrust_factor, target_velocity, motor_dir, prop_dir
+        return flight_mode, data_type, num_props, weight, thrust_factor, target_velocity, motor_dir, prop_dir
     
     except Exception as e:
         logger.error(f"Error while getting user inputs: {e}")
@@ -195,7 +209,7 @@ def get_voltage_req(torque, kV, i0, R, RPM):
     kV_mod = (kV / 60) * 2 * np.pi # rad/s/Volt
     return (torque * kV_mod + i0) * R + omega / kV_mod
 
-def get_current(V, RPM, kV, R):
+def get_current_req(V, RPM, kV, R):
     """
     :param V: Potential difference in volts
     :param RPM: Revolutions per minute of the motor
@@ -217,6 +231,19 @@ def get_eta_m(i0, V, R, i):
     """
     return ((i - i0) * (V - i * R)) / (V * i)
 
+def get_P_shaft_req(T_req, diameter):
+    """
+    Calculate required power to hover (from momentum theory)
+
+    :param T_req: Thrust required in Newtons
+    :param diameter: Diameter of prop in meters
+    :return: Required shaft power in Watts
+    """
+    rho = 1.225  # Air density in kg/m^3
+    R = diameter / 2
+    A = np.pi * R ** 2 # Propeller swept area
+    return np.sqrt(T_req**3 / (2 * rho * A))
+
 def get_P_shaft(i0, V, R, i):
     """
     Calculate shaft power.
@@ -231,17 +258,17 @@ def get_P_shaft(i0, V, R, i):
 
 def get_P_elec(V, i):
     """
-    Calculate electric power.
+    Calculate electric power required.
     
     :param V: Potential difference in volts
     :param i: Current in amps
-    :return: electric power in Watts
+    :return: electric power required in Watts
     """
     return V * i
 
-def get_header(thrust_req):
+def get_header(T_req, P_shaft_req):
     header = (
-                f"==========================================================\n"
+                "==========================================================\n"
                 "Drone Motor-Propeller Optimization Results\n"
                 "==========================================================\n"
                 "This file contains the top 10 motor-propeller pairings \n"
@@ -249,16 +276,18 @@ def get_header(thrust_req):
                 "\n"
                 "Each pairing is evaluated based on motor efficiency (eta_m)\n"
                 "under the specified thrust requirements.\n"
-                f"Thrust requirement: {thrust_req:.2f} N"
+                f"Thrust requirement: {T_req:.2f} N\n"
+                f"Shaft power requirement: {P_shaft_req:.2f} W\n"
                 "\n"
                 "Fields:\n"
                 "----------------------------------------------------------\n"
                 "Rank                 : Ranking (1 - 10)\n"
-                "Key                  : Unique identifier for the prop-motor pair\n"
+                "Signature            : Unique identifier for the prop-motor pair\n"
                 "Prop ID              : Unique identifier for the propeller\n"
                 "Motor ID             : Unique identifier for the motor\n"
                 "Applied motor voltage: Voltage applied to the motor (V)\n"
                 "Applied motor current: Current applied to the motor (A)\n"
+                "Desired Torque       : Torque required for equilibrium (N-m)\n"
                 "Desired RPM          : Required RPM to achieve desired thrust (RPM)\n"
                 "Motor efficiency     : Motor efficiency (dimensionless)\n"
                 "Shaft power          : Power supplied by the motor shaft (W)\n"
@@ -266,5 +295,6 @@ def get_header(thrust_req):
                 "----------------------------------------------------------\n"
                 "\n"
                 "Results:\n"
+                "----------------------------------------------------------\n"
             )
     return header
