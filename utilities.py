@@ -11,12 +11,12 @@ def setup_logger():
     logger.setLevel(logging.DEBUG)  # Set logger level to DEBUG to capture all levels of log messages
 
     ch = logging.StreamHandler()
-    ch.setLevel(logging.ERROR)  # Console handler set to WARNING level
+    ch.setLevel(logging.WARNING)  # Console handler set to WARNING level
     ch.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)-8s %(message)s'))
     logger.addHandler(ch)
 
     fh = logging.FileHandler("Log.log")
-    fh.setLevel(logging.DEBUG)  # File handler set to INFO level
+    fh.setLevel(logging.INFO)  # File handler set to INFO level
     fh.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)-8s %(message)s'))
     logger.addHandler(fh)
     
