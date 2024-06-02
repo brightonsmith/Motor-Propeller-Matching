@@ -11,8 +11,6 @@ This program has two modes, `static thrust` and `stable flight`. The difference 
 ## Propeller Data Formatting
 If in `static thrust` mode, the propeller file names should be of the form `[make]_[diameter]x[pitch]_static_[info]` with a `.txt` extension for UIUC data and a `.csv` extension for TYTO data. If in `stable flight` mode, the propeller file names should be of the form `[make]_[diameter]x[pitch]_[model]_[info]` with the same corresponding extensions. Note that `[info]` can be any relevant info that the user may want to store (i.e. model, motor used during propeller trials, etc.). Spaces can be used between the underscores.
 
-NeuMotor 3819
-
 ### UIUC Formatting
 UIUC `static thrust` files should look like this:
 ```
