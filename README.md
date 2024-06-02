@@ -1,4 +1,7 @@
 # Motor-Propeller-Matching
+Author: Brighton Smith
+
+## Description
 A Python script for evaluating efficiency alignment of a motor/propeller combination. This program is a physical implementation of the MIT paper called "DC Motor / Propeller Matching", available [here](https://web.mit.edu/drela/Public/web/qprop/motorprop.pdf). The program pulls from two propeller databases:
 1. UIUC Propeller Data Site: a webpage including wind tunnel measurements for propellers used on small UAVs and model aircraft. The website is available [here](https://m-selig.ae.illinois.edu/props/propDB.html), but all of the data files are available in the REPO under `propeller_data_UIUC`.
 2. Tyto Robotics Database: a community-driven database of motors and propellers commonly used in UAV propulsion systems, available [here](https://database.tytorobotics.com/). Some example files are included in the REPO under `propeller_data_TYTO`.
