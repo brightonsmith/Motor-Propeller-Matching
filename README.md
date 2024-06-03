@@ -1,4 +1,4 @@
-# Motor-Propeller-Matching
+# Powertrain Optimization for UAVs
 Author: Brighton Smith
 
 ## Description
